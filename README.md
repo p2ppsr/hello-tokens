@@ -12,9 +12,9 @@ npm i hello-tokens
 ## Example Usage
 
 ```ts
-import HelloWorldToken from 'hello-tokens'
+import HelloTokens from 'hello-tokens'
 
-const script = await HelloWorldToken.createOutputScript(message)
+const script = await HelloTokens.createOutputScript(message)
 console.log('Generated Locking Script:', script)
 ```
 *Note: You must have the MetaNet Client or other compatible wallet available.*
