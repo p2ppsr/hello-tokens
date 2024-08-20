@@ -15,7 +15,8 @@ npm i hello-tokens
 import HelloTokens from 'hello-tokens'
 
 // Create an output script
-const script = await HelloTokens.createOutputScript(message)
+const script = await HelloTokens.createOutputScript('Hello Blockchain!')
+const overlayURL = 'https://staging-overlay.babbage.systems'
 
 // Create the action
 const newToken = await createAction({
@@ -28,9 +29,9 @@ const newToken = await createAction({
 })
 
 // Submit the new HelloWorld token to an Overlay Service
-const submissionResult = await HelloTokens.submitToOverlay(
-  newToken, 
-  'https://staging-overlay.babbage.systems'
-)
+const submissionResult = await HelloTokens.submitToOverlay(newToken, overlayURL)
+
+// Find HelloWorld token by message
+const helloWorldTokens = await HelloTokens.lookupTokens('Hello Blockchain!', overlayURL)
 ```
 *Note: You must have the MetaNet Client or other compatible wallet available.*
