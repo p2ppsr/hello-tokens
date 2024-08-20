@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@babbage/sdk-ts": "^0.2.49",
+    "@bsv/sdk": "^1.1.15",
     "pushdrop": "^0.1.61"
   },
   "devDependencies": {

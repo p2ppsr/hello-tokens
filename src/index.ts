@@ -1,4 +1,5 @@
 import { EnvelopeEvidenceApi, toBEEFfromEnvelope } from '@babbage/sdk-ts'
+import { Transaction } from '@bsv/sdk'
 import pushdrop from 'pushdrop'
 
 /**
@@ -59,5 +60,50 @@ export default class HelloWorldToken {
     })
 
     return await result.json()
+  }
+
+  /**
+   * 
+   * @param message - Token message to search by, or specify 'findAll' to fetch all HelloWorld tokens from the Overlay Service.
+   * @param overlayURL - URL of the Overlay Service to lookup results from.
+   * @returns - Promise that resolves to an array of matching tokens found.
+   */
+  static async lookupTokens(message: string, overlayURL: string): Promise<any[]> {
+    const result = await fetch(`${overlayURL}/lookup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        service: 'ls_helloworld',
+        query: message
+      })
+    })
+    const lookupAnswer = await result.json()
+
+    if (lookupAnswer.type === 'output-list') {
+      const tokensFromLookup = await Promise.all(lookupAnswer.outputs.map(async output => {
+        const tx = Transaction.fromBEEF(output.beef)
+
+        const result = pushdrop.decode({
+          script: tx.outputs[output.outputIndex].lockingScript.toHex(),
+          fieldFormat: 'buffer'
+        })
+
+        const helloMessage = result.fields[0].toString('utf8')
+
+        return {
+          task: helloMessage,
+          sats: tx.outputs[output.outputIndex].satoshis,
+          token: {
+            txid: tx.id('hex'),
+            outputIndex: output.outputIndex,
+            lockingScript: tx.outputs[output.outputIndex].lockingScript.toHex()
+          }
+        }
+      }))
+      return tokensFromLookup
+    }
+    return []
   }
 }
