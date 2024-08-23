@@ -4,7 +4,7 @@ import pushdrop from 'pushdrop'
 /**
  * Class for creating Bitcoin locking scripts that embed a "Hello World" message.
  */
-export class HelloWorldToken {
+export class HelloTokens {
   /**
    * Creates a Bitcoin locking script that pushes and drops the given message with a simple P2PK lock.
    *
@@ -12,7 +12,7 @@ export class HelloWorldToken {
    * @returns - A promise that resolves to the locking script in hex format.
    *
    * @example
-   * const script = await HelloWorldToken.createOutputScript('Hello, Blockchain!')
+   * const script = await HelloTokens.createOutputScript('Hello, Blockchain!')
    * console.log(script) // Outputs the locking script as a hex string.
    */
   static async createOutputScript(message: string): Promise<string> {
