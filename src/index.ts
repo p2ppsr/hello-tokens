@@ -4,7 +4,7 @@ import pushdrop from 'pushdrop'
 /**
  * Class for creating Bitcoin locking scripts that embed a "Hello World" message.
  */
-export default class HelloWorldToken {
+export class HelloWorldToken {
   /**
    * Creates a Bitcoin locking script that pushes and drops the given message with a simple P2PK lock.
    *
