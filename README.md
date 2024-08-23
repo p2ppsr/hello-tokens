@@ -35,7 +35,7 @@ const beef = toBEEFfromEnvelope({
 }).beef
 
 // Submit the new HelloWorld token to an Overlay Service
-const result = await fetch(`${overlayURL}/submit`, {
+const submitResults = await fetch(`${overlayURL}/submit`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/octet-stream',
@@ -45,7 +45,7 @@ const result = await fetch(`${overlayURL}/submit`, {
 })
 
 // Find HelloWorld token by message
-const result = await fetch(`${overlayURL}/lookup`, {
+const lookupResults = await fetch(`${overlayURL}/lookup`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'
@@ -57,7 +57,7 @@ const result = await fetch(`${overlayURL}/lookup`, {
 })
 
 // Parse the lookup answer
-const lookupAnswer = await result.json()
+const lookupAnswer = await lookupResults.json()
 const message = await HelloTokens.parseLookupAnswer(lookupAnswer)
 ```
 *Note: You must have the MetaNet Client or other compatible wallet available.*
