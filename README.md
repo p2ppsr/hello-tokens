@@ -12,7 +12,7 @@ npm i hello-tokens
 ## Example Usage
 
 ```ts
-import HelloTokens from 'hello-tokens'
+import { HelloTokens } from 'hello-tokens'
 
 // Create an output script
 const script = await HelloTokens.createOutputScript('Hello Blockchain!')
