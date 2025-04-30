@@ -18,9 +18,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@babbage/sdk-ts": "^0.2.49",
-    "@bsv/sdk": "^1.1.15",
-    "pushdrop": "^0.1.61"
+    "@bsv/sdk": "^1.4.23"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

@@ -1,63 +1,83 @@
 # hello-tokens
-A simple utility for creating Bitcoin locking scripts that embed a "Hello World" message in the token.
+A simple helper for creating and discovering **“Hello World”** tokens on Bitcoin SV.
+
+---
 
 ## Installation
-
-To install the package, run:
 
 ```bash
 npm i hello-tokens
 ```
 
-## Example Usage
+---
+
+## Quick start
 
 ```ts
-import { HelloTokens } from 'hello-tokens'
+import { createToken, queryTokens } from 'hello-tokens'
 
-// Create an output script
-const script = await HelloTokens.createOutputScript('Hello Blockchain!')
-const overlayURL = 'https://staging-overlay.babbage.systems'
+// 1 — Create a token that embeds the given UTF-8 message
+await createToken('Hello, Blockchain!')
 
-// Create the action
-const newToken = await createAction({
-  outputs: [{
-    satoshis: 1,
-    script,
-    description: 'New HelloWorld token'
-  }],
-  description: 'Create a HelloWorld token'
+// 2 — Later: look it up via the ls_helloworld overlay
+const tokens = await queryTokens({
+  limit: 10,
+  message: 'Hello, Blockchain!'
 })
 
-const beef = toBEEFfromEnvelope({
-  rawTx: newToken.rawTx,
-  inputs: newToken.inputs,
-  txid: newToken.txid
-}).beef
-
-// Submit the new HelloWorld token to an Overlay Service
-const submitResults = await fetch(`${overlayURL}/submit`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/octet-stream',
-    'X-Topics': JSON.stringify(['tm_helloworld'])
-  },
-  body: new Uint8Array(beef)
-})
-
-// Find HelloWorld token by message
-const lookupResults = await fetch(`${overlayURL}/lookup`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    service: 'ls_helloworld',
-    query: 'Hello Blockchain!'
-  })
-})
-
-// Parse the lookup answer
-const lookupAnswer = await lookupResults.json()
-const message = await HelloTokens.parseLookupAnswer(lookupAnswer)
+console.log(tokens[0].message) // → "Hello, Blockchain!"
 ```
-*Note: You must have the MetaNet Client or other compatible wallet available.*
+
+> Behind the scenes **`createToken`** builds a PUSH-DROP locking script, funds it with 1 sat, and broadcasts the transaction with the topic `tm_helloworld` so overlay servers can track it instantly.
+
+---
+
+## Advanced usage
+
+### Injecting your own wallet / resolver instances
+
+If your app already manages a funded `WalletClient` (or wants to reuse a single `LookupResolver`), just pass them in:
+
+```ts
+import { createToken, queryTokens } from 'hello-tokens'
+import { WalletClient, LookupResolver } from '@bsv/sdk'
+
+const wallet   = new WalletClient()
+const resolver = new LookupResolver({
+  networkPreset: (await wallet.getNetwork()).network
+})
+
+await createToken('Hi again', { wallet })
+
+const results = await queryTokens(
+  { limit: 5, sortOrder: 'desc' },
+  { resolver }
+)
+```
+
+### Low-level helpers
+
+Need to decode an overlay response yourself?
+
+```ts
+import { decodeLookupAnswer } from 'hello-tokens'
+
+const answer   = await fetchOverlay(...)
+const tokens   = decodeLookupAnswer(answer)
+```
+
+---
+
+## API Overview
+
+| Function | Purpose |
+|----------|---------|
+| **`createToken(message, opts?)`** | Create & broadcast a new Hello-World token. |
+| **`queryTokens(params, opts?)`**  | Fetch existing outputs from an `ls_helloworld` overlay. |
+| **`decodeLookupAnswer(answer)`**  | Convert a raw overlay answer into strongly-typed results. |
+
+All functions are **stateless** and accept optional dependency injections, keeping your bundle small and your tests easy.
+
+---
+
+*Compatible with any BRC-100 wallet*
