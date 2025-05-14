@@ -1,4 +1,4 @@
-import { BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient } from '@bsv/sdk'
+import { BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient, WalletProtocol } from '@bsv/sdk'
 
 export interface HelloWorldToken {
   message: string
@@ -11,6 +11,9 @@ export interface HelloWorldToken {
 }
 
 const DEFAULT_TOPIC = 'tm_helloworld'
+const PROTOCOL: WalletProtocol = [1, 'HelloWorld']
+const KEY_ID = '1'
+
 
 /**
  * Creates a Bitcoin locking script that pushes and drops the given message with a simple P2PK lock.
@@ -26,8 +29,8 @@ export async function createToken(message: string): Promise<BroadcastResponse | 
   const wallet = new WalletClient()
   const outputScript = await new PushDrop(wallet).lock(
     [Utils.toArray(message)],
-    [1, 'HelloWorld'],
-    '1',
+    PROTOCOL,
+    KEY_ID,
     'anyone',
     true
   )
@@ -50,6 +53,62 @@ export async function createToken(message: string): Promise<BroadcastResponse | 
 
   return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
 }
+
+export async function updateToken(
+  prevToken: HelloWorldToken,
+  newMessage: string,
+  wallet = new WalletClient()
+): Promise<BroadcastResponse | BroadcastFailure> {
+
+  /* 1. Build the NEW PushDrop locking script --------------------- */
+  const pushdrop = new PushDrop(wallet)
+  const newLocking = await pushdrop.lock(
+    [Utils.toArray(newMessage)],
+    PROTOCOL,
+    KEY_ID,
+    'self'          // we’ll immediately spend it in this tx
+  )
+
+  /* 2. Prepare the ACTION --------------------------------------- */
+  const prevOutpoint = `${prevToken.token.txid}.${prevToken.token.outputIndex}` as const
+
+  const { signableTransaction, txid } = await wallet.createAction({
+    description: 'Update HelloWorld token',
+    inputs: [{
+      outpoint: prevOutpoint,
+      unlockingScriptLength: 74,            // 1 sig, 1 pushdrop unlock
+      inputDescription: 'Spend previous HelloWorld token'
+    }],
+    outputs: [{
+      satoshis: 1,
+      lockingScript: newLocking.toHex(),
+      outputDescription: 'Updated HelloWorld Token'
+    }],
+    options: { acceptDelayedBroadcast: false, randomizeOutputs: false }
+  })
+
+  if (signableTransaction == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  // Wallet returned a signableTransaction → we still need to sign input 0
+  const unlocker = pushdrop.unlock(PROTOCOL, KEY_ID, 'self')
+  const unlockingScript = await unlocker.sign(Transaction.fromAtomicBEEF(signableTransaction.tx), 0)
+
+  const { tx } = await wallet.signAction({
+    reference: signableTransaction.reference,
+    spends: {
+      0: { unlockingScript: unlockingScript.toHex() }
+    }
+  })
+  if (tx == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
+    networkPreset: (await wallet.getNetwork()).network
+  })
+  return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
+}
+
 
 /**
  * Queries the **ls_helloworld** overlay and returns matching outputs as
