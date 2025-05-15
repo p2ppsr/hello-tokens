@@ -62,11 +62,12 @@ export async function updateToken(
 
   /* 1. Build the NEW PushDrop locking script --------------------- */
   const pushdrop = new PushDrop(wallet)
-  const newLocking = await pushdrop.lock(
+  const newLocking = await new PushDrop(wallet).lock(
     [Utils.toArray(newMessage)],
     PROTOCOL,
     KEY_ID,
-    'self'          // we’ll immediately spend it in this tx
+    'anyone',
+    true
   )
 
   /* 2. Prepare the ACTION --------------------------------------- */
