@@ -18,7 +18,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@bsv/sdk": "^1.4.23"
+    "@bsv/sdk": "^1.5.2"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
