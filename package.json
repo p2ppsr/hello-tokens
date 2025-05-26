@@ -1,5 +1,6 @@
 {
   "name": "hello-tokens",
+  "type": "module",
   "version": "0.1.10",
   "description": "Create hello world tokens with ease.",
   "author": "Peer-to-peer Privacy Systems Research, LLC",

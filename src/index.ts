@@ -1,4 +1,4 @@
-import { BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient, WalletProtocol } from '@bsv/sdk'
+import { Beef, BEEF, BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient, WalletProtocol } from '@bsv/sdk'
 
 export interface HelloWorldToken {
   message: string
@@ -7,6 +7,7 @@ export interface HelloWorldToken {
     outputIndex: number
     lockingScript: string
     satoshis: number
+    beef?: BEEF
   }
 }
 
@@ -59,6 +60,9 @@ export async function updateToken(
   newMessage: string,
   wallet = new WalletClient()
 ): Promise<BroadcastResponse | BroadcastFailure> {
+  if (prevToken.token.beef == null) {
+    throw new Error('Token must contain tx BEEF to be updated')
+  }
 
   /* 1. Build the NEW PushDrop locking script --------------------- */
   const pushdrop = new PushDrop(wallet)
@@ -72,9 +76,10 @@ export async function updateToken(
 
   /* 2. Prepare the ACTION --------------------------------------- */
   const prevOutpoint = `${prevToken.token.txid}.${prevToken.token.outputIndex}` as const
-
-  const { signableTransaction, txid } = await wallet.createAction({
+  const loadedBEEF = Beef.fromBinary(prevToken.token.beef as number[])
+  const { signableTransaction } = await wallet.createAction({
     description: 'Update HelloWorld token',
+    inputBEEF: loadedBEEF.toBinary(),
     inputs: [{
       outpoint: prevOutpoint,
       unlockingScriptLength: 74,            // 1 sig, 1 pushdrop unlock
@@ -92,8 +97,50 @@ export async function updateToken(
     throw new Error('Unable to redeem token!')
   }
   // Wallet returned a signableTransaction → we still need to sign input 0
-  const unlocker = pushdrop.unlock(PROTOCOL, KEY_ID, 'self')
-  const unlockingScript = await unlocker.sign(Transaction.fromAtomicBEEF(signableTransaction.tx), 0)
+  const unlocker = pushdrop.unlock(PROTOCOL, KEY_ID, 'anyone')
+  const unlockingScript = await unlocker.sign(Transaction.fromBEEF(signableTransaction.tx), 0)
+
+  const { tx } = await wallet.signAction({
+    reference: signableTransaction.reference,
+    spends: {
+      0: { unlockingScript: unlockingScript.toHex() }
+    }
+  })
+  if (tx == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
+    networkPreset: (await wallet.getNetwork()).network
+  })
+  return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
+}
+
+/**
+ * Redeems a HelloWorld token by spending it.
+ * @param token - The HelloWorld token to redeem.
+ * @returns A promise that resolves to the broadcast response or failure.
+ */
+export async function redeemToken(token: HelloWorldToken): Promise<BroadcastResponse | BroadcastFailure> {
+  const wallet = new WalletClient()
+  const prevOutpoint = `${token.token.txid}.${token.token.outputIndex}` as const
+  const loadedBEEF = Beef.fromBinary(token.token.beef as number[])
+  const { signableTransaction } = await wallet.createAction({
+    description: 'Redeem HelloWorld token',
+    inputBEEF: loadedBEEF.toBinary(),
+    inputs: [{
+      outpoint: prevOutpoint,
+      unlockingScriptLength: 74,            // 1 sig, 1 pushdrop unlock
+      inputDescription: 'Spend previous HelloWorld token'
+    }],
+    options: { acceptDelayedBroadcast: false, randomizeOutputs: false }
+  })
+
+  if (signableTransaction == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  // Wallet returned a signableTransaction → we still need to sign input 0
+  const unlocker = new PushDrop(wallet).unlock(PROTOCOL, KEY_ID, 'anyone')
+  const unlockingScript = await unlocker.sign(Transaction.fromBEEF(signableTransaction.tx), 0)
 
   const { tx } = await wallet.signAction({
     reference: signableTransaction.reference,
@@ -130,7 +177,8 @@ export async function queryTokens(
   opts: {
     resolver?: LookupResolver
     wallet?: WalletClient           // only used if we must build a resolver
-    timeout?: number
+    timeout?: number,
+    includeBeef?: boolean
   } = {}
 ): Promise<HelloWorldToken[]> {
   const {
@@ -155,7 +203,7 @@ export async function queryTokens(
     { service: 'ls_helloworld', query },
     opts.timeout ?? 10_000
   )
-  return parseLookupAnswer(answer)
+  return parseLookupAnswer(answer, opts.includeBeef)
 }
 
 /**
@@ -164,7 +212,7 @@ export async function queryTokens(
  * @param lookupAnswer - Lookup answer containing HelloWorld output data to parse.
  * @returns - The HelloWorld message associated with the first output.
  */
-export function parseLookupAnswer(lookupAnswer: LookupAnswer): HelloWorldToken[] {
+export function parseLookupAnswer(lookupAnswer: LookupAnswer, includeBeef?: boolean): HelloWorldToken[] {
   if (lookupAnswer.type !== 'output-list' || !lookupAnswer.outputs.length) return []
 
   return lookupAnswer.outputs.map(o => {
@@ -177,7 +225,8 @@ export function parseLookupAnswer(lookupAnswer: LookupAnswer): HelloWorldToken[]
         txid: tx.id('hex'),
         outputIndex: o.outputIndex,
         lockingScript: out.lockingScript.toHex(),
-        satoshis: out.satoshis!
+        satoshis: out.satoshis!,
+        ...(includeBeef ? { beef: o.beef } : {})
       }
     }
   })
