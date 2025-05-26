@@ -1,4 +1,4 @@
-import { BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient } from '@bsv/sdk'
+import { Beef, BEEF, BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient, WalletInterface, WalletProtocol } from '@bsv/sdk'
 
 export interface HelloWorldToken {
   message: string
@@ -7,27 +7,31 @@ export interface HelloWorldToken {
     outputIndex: number
     lockingScript: string
     satoshis: number
+    beef?: BEEF
   }
 }
 
 const DEFAULT_TOPIC = 'tm_helloworld'
+const PROTOCOL: WalletProtocol = [1, 'HelloWorld']
+const KEY_ID = '1'
+
 
 /**
  * Creates a Bitcoin locking script that pushes and drops the given message with a simple P2PK lock.
  *
  * @param message - The message to embed in the Bitcoin locking script.
+ * @param wallet - The wallet to use for creating the action (default: new WalletClient())
  * @returns - A promise that resolves to the locking script in hex format.
  *
  * @example
  * const script = await HelloTokens.createOutputScript('Hello, Blockchain!')
  * console.log(script) // Outputs the locking script as a hex string.
  */
-export async function createToken(message: string): Promise<BroadcastResponse | BroadcastFailure> {
-  const wallet = new WalletClient()
+export async function createToken(message: string, wallet: WalletInterface = new WalletClient()): Promise<BroadcastResponse | BroadcastFailure> {
   const outputScript = await new PushDrop(wallet).lock(
     [Utils.toArray(message)],
-    [1, 'HelloWorld'],
-    '1',
+    PROTOCOL,
+    KEY_ID,
     'anyone',
     true
   )
@@ -45,11 +49,121 @@ export async function createToken(message: string): Promise<BroadcastResponse | 
   if (!tx) throw new Error('Failed to create transaction')
 
   const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
-    networkPreset: (await wallet.getNetwork()).network
+    networkPreset: (await wallet.getNetwork({})).network
   })
 
   return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
 }
+
+/**
+ * Updates a HelloWorld token by spending it.
+ * @param prevToken - The HelloWorld token to update.
+ * @param newMessage - The new message to embed in the token.
+ * @param wallet - The wallet to use for updating the token (default: new WalletClient())
+ * @returns A promise that resolves to the broadcast response or failure.
+ */
+export async function updateToken(
+  prevToken: HelloWorldToken,
+  newMessage: string,
+  wallet: WalletInterface = new WalletClient()
+): Promise<BroadcastResponse | BroadcastFailure> {
+  if (prevToken.token.beef == null) {
+    throw new Error('Token must contain tx BEEF to be updated')
+  }
+
+  /* 1. Build the NEW PushDrop locking script --------------------- */
+  const pushdrop = new PushDrop(wallet)
+  const newLocking = await new PushDrop(wallet).lock(
+    [Utils.toArray(newMessage)],
+    PROTOCOL,
+    KEY_ID,
+    'anyone',
+    true
+  )
+
+  /* 2. Prepare the ACTION --------------------------------------- */
+  const prevOutpoint = `${prevToken.token.txid}.${prevToken.token.outputIndex}` as const
+  const loadedBEEF = Beef.fromBinary(prevToken.token.beef as number[])
+  const { signableTransaction } = await wallet.createAction({
+    description: 'Update HelloWorld token',
+    inputBEEF: loadedBEEF.toBinary(),
+    inputs: [{
+      outpoint: prevOutpoint,
+      unlockingScriptLength: 74,            // 1 sig, 1 pushdrop unlock
+      inputDescription: 'Spend previous HelloWorld token'
+    }],
+    outputs: [{
+      satoshis: 1,
+      lockingScript: newLocking.toHex(),
+      outputDescription: 'Updated HelloWorld Token'
+    }],
+    options: { acceptDelayedBroadcast: false, randomizeOutputs: false }
+  })
+
+  if (signableTransaction == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  // Wallet returned a signableTransaction → we still need to sign input 0
+  const unlocker = pushdrop.unlock(PROTOCOL, KEY_ID, 'anyone')
+  const unlockingScript = await unlocker.sign(Transaction.fromBEEF(signableTransaction.tx), 0)
+
+  const { tx } = await wallet.signAction({
+    reference: signableTransaction.reference,
+    spends: {
+      0: { unlockingScript: unlockingScript.toHex() }
+    }
+  })
+  if (tx == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
+    networkPreset: (await wallet.getNetwork({})).network
+  })
+  return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
+}
+
+/**
+ * Redeems a HelloWorld token by spending it.
+ * @param token - The HelloWorld token to redeem.
+ * @param wallet - The wallet to use for redeeming the token (default: new WalletClient())
+ * @returns A promise that resolves to the broadcast response or failure.
+ */
+export async function redeemToken(token: HelloWorldToken, wallet: WalletInterface): Promise<BroadcastResponse | BroadcastFailure> {
+  const prevOutpoint = `${token.token.txid}.${token.token.outputIndex}` as const
+  const loadedBEEF = Beef.fromBinary(token.token.beef as number[])
+  const { signableTransaction } = await wallet.createAction({
+    description: 'Redeem HelloWorld token',
+    inputBEEF: loadedBEEF.toBinary(),
+    inputs: [{
+      outpoint: prevOutpoint,
+      unlockingScriptLength: 74,            // 1 sig, 1 pushdrop unlock
+      inputDescription: 'Spend previous HelloWorld token'
+    }],
+    options: { acceptDelayedBroadcast: false, randomizeOutputs: false }
+  })
+
+  if (signableTransaction == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  // Wallet returned a signableTransaction → we still need to sign input 0
+  const unlocker = new PushDrop(wallet).unlock(PROTOCOL, KEY_ID, 'anyone')
+  const unlockingScript = await unlocker.sign(Transaction.fromBEEF(signableTransaction.tx), 0)
+
+  const { tx } = await wallet.signAction({
+    reference: signableTransaction.reference,
+    spends: {
+      0: { unlockingScript: unlockingScript.toHex() }
+    }
+  })
+  if (tx == null) {
+    throw new Error('Unable to redeem token!')
+  }
+  const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
+    networkPreset: (await wallet.getNetwork({})).network
+  })
+  return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
+}
+
 
 /**
  * Queries the **ls_helloworld** overlay and returns matching outputs as
@@ -69,8 +183,9 @@ export async function queryTokens(
   },
   opts: {
     resolver?: LookupResolver
-    wallet?: WalletClient           // only used if we must build a resolver
-    timeout?: number
+    wallet?: WalletInterface           // only used if we must build a resolver
+    timeout?: number,
+    includeBeef?: boolean
   } = {}
 ): Promise<HelloWorldToken[]> {
   const {
@@ -87,7 +202,7 @@ export async function queryTokens(
     opts.resolver ??
     new LookupResolver({
       networkPreset: (
-        await (opts.wallet ?? new WalletClient()).getNetwork()
+        await (opts.wallet || new WalletClient()).getNetwork({})
       ).network
     })
 
@@ -95,7 +210,7 @@ export async function queryTokens(
     { service: 'ls_helloworld', query },
     opts.timeout ?? 10_000
   )
-  return parseLookupAnswer(answer)
+  return parseLookupAnswer(answer, opts.includeBeef)
 }
 
 /**
@@ -104,7 +219,7 @@ export async function queryTokens(
  * @param lookupAnswer - Lookup answer containing HelloWorld output data to parse.
  * @returns - The HelloWorld message associated with the first output.
  */
-export function parseLookupAnswer(lookupAnswer: LookupAnswer): HelloWorldToken[] {
+export function parseLookupAnswer(lookupAnswer: LookupAnswer, includeBeef?: boolean): HelloWorldToken[] {
   if (lookupAnswer.type !== 'output-list' || !lookupAnswer.outputs.length) return []
 
   return lookupAnswer.outputs.map(o => {
@@ -117,7 +232,8 @@ export function parseLookupAnswer(lookupAnswer: LookupAnswer): HelloWorldToken[]
         txid: tx.id('hex'),
         outputIndex: o.outputIndex,
         lockingScript: out.lockingScript.toHex(),
-        satoshis: out.satoshis!
+        satoshis: out.satoshis!,
+        ...(includeBeef ? { beef: o.beef } : {})
       }
     }
   })
