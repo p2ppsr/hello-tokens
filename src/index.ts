@@ -1,4 +1,4 @@
-import { Beef, BEEF, BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient, WalletProtocol } from '@bsv/sdk'
+import { Beef, BEEF, BroadcastFailure, BroadcastResponse, LookupAnswer, LookupResolver, PushDrop, TopicBroadcaster, Transaction, Utils, WalletClient, WalletInterface, WalletProtocol } from '@bsv/sdk'
 
 export interface HelloWorldToken {
   message: string
@@ -20,14 +20,14 @@ const KEY_ID = '1'
  * Creates a Bitcoin locking script that pushes and drops the given message with a simple P2PK lock.
  *
  * @param message - The message to embed in the Bitcoin locking script.
+ * @param wallet - The wallet to use for creating the action (default: new WalletClient())
  * @returns - A promise that resolves to the locking script in hex format.
  *
  * @example
  * const script = await HelloTokens.createOutputScript('Hello, Blockchain!')
  * console.log(script) // Outputs the locking script as a hex string.
  */
-export async function createToken(message: string): Promise<BroadcastResponse | BroadcastFailure> {
-  const wallet = new WalletClient()
+export async function createToken(message: string, wallet: WalletInterface = new WalletClient()): Promise<BroadcastResponse | BroadcastFailure> {
   const outputScript = await new PushDrop(wallet).lock(
     [Utils.toArray(message)],
     PROTOCOL,
@@ -49,16 +49,23 @@ export async function createToken(message: string): Promise<BroadcastResponse | 
   if (!tx) throw new Error('Failed to create transaction')
 
   const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
-    networkPreset: (await wallet.getNetwork()).network
+    networkPreset: (await wallet.getNetwork({})).network
   })
 
   return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
 }
 
+/**
+ * Updates a HelloWorld token by spending it.
+ * @param prevToken - The HelloWorld token to update.
+ * @param newMessage - The new message to embed in the token.
+ * @param wallet - The wallet to use for updating the token (default: new WalletClient())
+ * @returns A promise that resolves to the broadcast response or failure.
+ */
 export async function updateToken(
   prevToken: HelloWorldToken,
   newMessage: string,
-  wallet = new WalletClient()
+  wallet: WalletInterface = new WalletClient()
 ): Promise<BroadcastResponse | BroadcastFailure> {
   if (prevToken.token.beef == null) {
     throw new Error('Token must contain tx BEEF to be updated')
@@ -110,7 +117,7 @@ export async function updateToken(
     throw new Error('Unable to redeem token!')
   }
   const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
-    networkPreset: (await wallet.getNetwork()).network
+    networkPreset: (await wallet.getNetwork({})).network
   })
   return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
 }
@@ -118,10 +125,10 @@ export async function updateToken(
 /**
  * Redeems a HelloWorld token by spending it.
  * @param token - The HelloWorld token to redeem.
+ * @param wallet - The wallet to use for redeeming the token (default: new WalletClient())
  * @returns A promise that resolves to the broadcast response or failure.
  */
-export async function redeemToken(token: HelloWorldToken): Promise<BroadcastResponse | BroadcastFailure> {
-  const wallet = new WalletClient()
+export async function redeemToken(token: HelloWorldToken, wallet: WalletInterface): Promise<BroadcastResponse | BroadcastFailure> {
   const prevOutpoint = `${token.token.txid}.${token.token.outputIndex}` as const
   const loadedBEEF = Beef.fromBinary(token.token.beef as number[])
   const { signableTransaction } = await wallet.createAction({
@@ -152,7 +159,7 @@ export async function redeemToken(token: HelloWorldToken): Promise<BroadcastResp
     throw new Error('Unable to redeem token!')
   }
   const broadcaster = new TopicBroadcaster([DEFAULT_TOPIC], {
-    networkPreset: (await wallet.getNetwork()).network
+    networkPreset: (await wallet.getNetwork({})).network
   })
   return broadcaster.broadcast(Transaction.fromAtomicBEEF(tx))
 }
@@ -176,7 +183,7 @@ export async function queryTokens(
   },
   opts: {
     resolver?: LookupResolver
-    wallet?: WalletClient           // only used if we must build a resolver
+    wallet?: WalletInterface           // only used if we must build a resolver
     timeout?: number,
     includeBeef?: boolean
   } = {}
@@ -195,7 +202,7 @@ export async function queryTokens(
     opts.resolver ??
     new LookupResolver({
       networkPreset: (
-        await (opts.wallet ?? new WalletClient()).getNetwork()
+        await (opts.wallet || new WalletClient()).getNetwork({})
       ).network
     })
 
