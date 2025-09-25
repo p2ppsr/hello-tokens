@@ -183,7 +183,7 @@ export async function queryTokens(
   },
   opts: {
     resolver?: LookupResolver
-    wallet?: WalletInterface           // only used if we must build a resolver
+    network?: 'mainnet' | 'testnet'
     timeout?: number,
     includeBeef?: boolean
   } = {}
@@ -201,9 +201,7 @@ export async function queryTokens(
   const resolver =
     opts.resolver ??
     new LookupResolver({
-      networkPreset: (
-        await (opts.wallet || new WalletClient()).getNetwork({})
-      ).network
+      networkPreset: opts.network ?? 'mainnet'
     })
 
   const answer = await resolver.query(
@@ -211,6 +209,42 @@ export async function queryTokens(
     opts.timeout ?? 10_000
   )
   return parseLookupAnswer(answer, opts.includeBeef)
+}
+
+/**
+ * Finds HelloWorld tokens by exact message match.
+ * 
+ * @param message - The exact message to search for.
+ * @param opts - Optional configuration for network, resolver, timeout, and beef inclusion.
+ * @returns A promise that resolves to an array of matching HelloWorld tokens.
+ * 
+ * @example
+ * const tokens = await findTokenByMessage('Hello, World!')
+ * console.log(tokens) // Array of tokens with the message "Hello, World!"
+ */
+export async function findTokenByMessage(
+  message: string,
+  opts: {
+    resolver?: LookupResolver
+    network?: 'mainnet' | 'testnet'
+    timeout?: number
+    includeBeef?: boolean
+    limit?: number
+  } = {}
+): Promise<HelloWorldToken[]> {
+  return queryTokens(
+    {
+      limit: opts.limit ?? 100,
+      message: message,
+      sortOrder: 'desc'
+    },
+    {
+      resolver: opts.resolver,
+      network: opts.network,
+      timeout: opts.timeout,
+      includeBeef: opts.includeBeef
+    }
+  )
 }
 
 /**
